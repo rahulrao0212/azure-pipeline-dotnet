@@ -1,0 +1,60 @@
+# Starter pipeline
+# Start with a minimal pipeline that you can customize to build and deploy your code.
+# Add steps that build, run tests, deploy, and more:
+# https://aka.ms/yaml
+
+trigger:
+- main
+
+pool:
+  vmImage: windows-latest
+
+steps:
+  - task: DotNetCoreCLI@2
+    displayName: 'DotNet Core Build'
+    inputs:
+      command: build
+      projects: '**/*web/*.csproj'
+      configuration: $(buildConfiguration)
+  
+  - task: DotNetCoreCLI@2
+    displayName: 'Run Test'
+    inputs:
+      command: 'test'
+      arguments: '--configuration $(buildConfiguration) --collect:"XPlat Code Coverage" -- RunConfiguration.DisableAppDomain=true'
+      publishTestResults: true
+      projects: '**/*Tests/*.csproj'
+
+  - script: 'dotnet tool install --global dotnet-reportgenerator-globaltool --version 4.5.8'  
+    displayName: 'Install ReportGenerator tool' 
+
+  - script: 'reportgenerator -reports:$(Agent.TempDirectory)/**/coverage.cobertura.xml -targetdir:$(Build.SourcesDirectory)/coverlet/reports -reporttypes:"Cobertura"'  
+    displayName: 'Create reports' 
+  
+  - task: PublishCodeCoverageResults@1  
+    displayName: 'Publish code coverage'  
+    inputs:  
+      codeCoverageTool: Cobertura  
+      summaryFileLocation: '$(Build.SourcesDirectory)/coverlet/reports/Cobertura.xml'
+  
+  - task: DotNetCoreCLI@2
+    displayName: 'Dotnet Publish and Zip'
+    inputs:
+      publishWebProjects: true
+      command: 'publish'
+      arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)'
+      zipAfterPublish: true
+  
+  - task: PublishBuildArtifacts@1
+    displayName: 'Publish Build Artifact'
+    inputs:
+      PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+      ArtifactName: DotNetCoreApp
+  
+  - task: AzureWebApp@1
+    displayName: 'Deploy to Azure Web App'
+    inputs:
+      azureSubscription: 'dotnetazconn'
+      appType: 'webApp'
+      appName: 'azdotnetdemo'
+      package: '$(Build.ArtifactStagingDirectory)/**/*.zip'
